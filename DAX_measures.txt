@@ -1,0 +1,86 @@
+// ============ POWER BI DAX - Salesperson Performance Analysis ============
+// Table name used below: superstore   (CSV: data/superstore_sql.csv)
+// Create each with: Home > New measure  (or right-click table > New measure)
+
+// ---------- Base KPIs ----------
+Total Sales = SUM(superstore[sales])
+Total Profit = SUM(superstore[profit])
+Profit Margin % = DIVIDE([Total Profit], [Total Sales])
+Orders = DISTINCTCOUNT(superstore[order_id])
+AOV = DIVIDE([Total Sales], [Orders])
+Customers = DISTINCTCOUNT(superstore[customer_id])
+States = DISTINCTCOUNT(superstore[state])
+Avg Discount % = AVERAGE(superstore[discount])
+Sales per State = DIVIDE([Total Sales], [States])
+Profit per Customer = DIVIDE([Total Profit], [Customers])
+
+// ---------- Growth ----------
+Sales 2014 = CALCULATE([Total Sales], superstore[order_year] = 2014)
+Sales 2017 = CALCULATE([Total Sales], superstore[order_year] = 2017)
+CAGR 2014-17 =
+VAR s14 = [Sales 2014]
+VAR s17 = [Sales 2017]
+RETURN IF(s14 > 0 && s17 > 0, POWER(DIVIDE(s17, s14), 1/3) - 1)
+
+Sales PY = CALCULATE([Total Sales], superstore[order_year] = MAX(superstore[order_year]) - 1)
+YoY Growth % = DIVIDE([Total Sales] - [Sales PY], [Sales PY])
+
+// ---------- Min-max scaled scores (0-100) across the salespeople on screen ----------
+Score Sales per State =
+VAR v  = [Sales per State]
+VAR mn = MINX(ALLSELECTED(superstore[salesperson]), [Sales per State])
+VAR mx = MAXX(ALLSELECTED(superstore[salesperson]), [Sales per State])
+RETURN DIVIDE(v - mn, mx - mn) * 100
+
+Score Profit per Customer =
+VAR v  = [Profit per Customer]
+VAR mn = MINX(ALLSELECTED(superstore[salesperson]), [Profit per Customer])
+VAR mx = MAXX(ALLSELECTED(superstore[salesperson]), [Profit per Customer])
+RETURN DIVIDE(v - mn, mx - mn) * 100
+
+Score Margin =
+VAR v  = [Profit Margin %]
+VAR mn = MINX(ALLSELECTED(superstore[salesperson]), [Profit Margin %])
+VAR mx = MAXX(ALLSELECTED(superstore[salesperson]), [Profit Margin %])
+RETURN DIVIDE(v - mn, mx - mn) * 100
+
+Score Growth =
+VAR v  = [CAGR 2014-17]
+VAR mn = MINX(ALLSELECTED(superstore[salesperson]), [CAGR 2014-17])
+VAR mx = MAXX(ALLSELECTED(superstore[salesperson]), [CAGR 2014-17])
+RETURN DIVIDE(v - mn, mx - mn) * 100
+
+Score AOV =
+VAR v  = [AOV]
+VAR mn = MINX(ALLSELECTED(superstore[salesperson]), [AOV])
+VAR mx = MAXX(ALLSELECTED(superstore[salesperson]), [AOV])
+RETURN DIVIDE(v - mn, mx - mn) * 100
+
+Score Discount Discipline =
+VAR v  = [Avg Discount %]
+VAR mn = MINX(ALLSELECTED(superstore[salesperson]), [Avg Discount %])
+VAR mx = MAXX(ALLSELECTED(superstore[salesperson]), [Avg Discount %])
+RETURN 100 - DIVIDE(v - mn, mx - mn) * 100
+
+// ---------- Composite score (Model B: territory-fair) + Rank ----------
+Composite Score =
+0.20 * [Score Sales per State] + 0.20 * [Score Profit per Customer] +
+0.20 * [Score Margin] + 0.20 * [Score Growth] +
+0.10 * [Score AOV] + 0.10 * [Score Discount Discipline]
+
+Rank = RANKX(ALLSELECTED(superstore[salesperson]), [Composite Score], , DESC, Dense)
+
+// ---------- Calculated COLUMN (not measure): Modeling > New column ----------
+Discount Band =
+SWITCH(TRUE(),
+    superstore[discount] = 0,   "1 No discount",
+    superstore[discount] <= 0.2, "2 Up to 20%",
+    superstore[discount] <= 0.4, "3 21-40%",
+    "4 Above 40%")
+
+// ---------- CHECK your numbers (all years, no slicer selected) ----------
+// Anna Andreadi : Sales 725,458 | Profit 108,418 | Margin 14.9% | Score 94.1 | Rank 1
+// Chuck Magee   : Sales 678,781 | Profit  91,523 | Margin 13.5% | Score 75.6 | Rank 2
+// Cassandra B.  : Sales 391,722 | Profit  46,749 | Margin 11.9% | Score 33.1 | Rank 3
+// Kelly Williams: Sales 501,240 | Profit  39,706 | Margin  7.9% | Score 11.7 | Rank 4
+// Note: Score/Rank change if you select a Year slicer (CAGR needs 2014 & 2017 -> blank with a single-year filter). Keep the leaderboard table free of the Year slicer (Edit interactions > None).
